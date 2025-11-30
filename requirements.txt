@@ -6,7 +6,7 @@ scikit-learn==1.5.2
 python-dotenv==1.0.1
 PyPDF2==3.0.1
 numpy==1.26.4
-torch==2.2.1
+torch==2.5.1
 transformers==4.37.2
 tokenizers==0.15.2
 gunicorn==21.2.0
