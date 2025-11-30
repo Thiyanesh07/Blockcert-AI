@@ -1,0 +1,195 @@
+BLOCKCERT-AI DEPLOYMENT CHANGES LOG
+====================================
+Date: November 30, 2025
+
+
+FILE: app.py
+============
+
+Line 1-6: Changed imports
+--------------------------
+OLD:
+from flask import Flask, render_template, request, redirect, url_for, session, send_file
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer
+import numpy as np
+import os
+import io # Required for handling binary file streams
+
+NEW:
+from flask import Flask, render_template, request, redirect, url_for, session, send_file
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+import os
+import io
+import hashlib
+
+
+Line 18-19: Changed app secret key
+-----------------------------------
+OLD:
+app.secret_key = "super_secret_key_blockcert_ai" 
+
+NEW:
+app.secret_key = os.environ.get("SECRET_KEY", "super_secret_key_blockcert_ai")
+
+
+Line 24-33: Replaced direct model loading with lazy loading
+------------------------------------------------------------
+OLD:
+model = SentenceTransformer("sentence-transformers/paraphrase-MiniLM-L3-v2")
+
+NEW:
+# Lazy load model to reduce startup memory
+_model = None
+
+def get_model():
+    global _model
+    if _model is None:
+        from sentence_transformers import SentenceTransformer
+        # Use smaller model for memory efficiency
+        _model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _model
+
+
+Line 53-60: Updated embed() function with error handling
+---------------------------------------------------------
+OLD:
+def embed(text: str) -> np.ndarray:
+    if not text:
+        return np.zeros((1, 384))
+    return np.array(model.encode([text]))
+
+NEW:
+def embed(text: str) -> np.ndarray:
+    if not text:
+        return np.zeros((1, 384))
+    try:
+        model = get_model()
+        return np.array(model.encode([text]))
+    except Exception as e:
+        print(f"Error in embedding: {e}")
+        return np.zeros((1, 384))
+
+
+Line 95-98: Added health check endpoint
+----------------------------------------
+NEW (Added after view_resume route):
+@app.route('/health')
+def health_check():
+    return {"status": "ok", "service": "blockcert-ai"}, 200
+
+
+Line 142-145: Fixed job role duplication issue
+-----------------------------------------------
+OLD:
+job = Job.query.filter_by(title="Hackathon Job Role").first()
+if not job:
+    job = Job(title="Hackathon Job Role", description=job_text, skills_required=",".join(job_skills))
+
+NEW:
+# Create unique job based on description hash to avoid reusing same job for all candidates
+job_hash = hashlib.md5(job_text.encode()).hexdigest()[:8]
+job_title = f"Job Role - {job_hash}"
+
+job = Job.query.filter_by(title=job_title).first()
+if not job:
+    job = Job(title=job_title, description=job_text, skills_required=",".join(job_skills))
+
+
+FILE: requirements.txt
+======================
+
+Complete file replacement:
+--------------------------
+OLD:
+flask==3.1.2
+flask_sqlalchemy==3.1.1
+sqlalchemy==2.0.23
+sentence-transformers==2.2.2
+scikit-learn==1.3.2
+python-dotenv==1.0.1
+PyPDF2==3.0.1
+numpy==1.26.4
+torch==2.2.1+cpu
+transformers==4.37.2
+tokenizers==0.15.2
+gunicorn==21.2.0
+
+NEW:
+flask==3.1.2
+flask_sqlalchemy==3.1.1
+sqlalchemy==2.0.36
+sentence-transformers==3.3.1
+scikit-learn==1.5.2
+python-dotenv==1.0.1
+pypdf==5.1.0
+numpy==2.0.2
+torch==2.5.1
+transformers==4.46.3
+gunicorn==23.0.0
+
+
+FILE: render.yaml
+=================
+
+Complete file replacement:
+--------------------------
+OLD:
+services:
+  - type: web
+    name: blockcert-ai
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 200 --workers 1
+    envVars:
+      - key: TOKENIZERS_PARALLELISM
+        value: "false"
+      - key: PYTHON_VERSION
+        value: "3.13"
+
+NEW:
+services:
+  - type: web
+    name: blockcert-ai
+    runtime: python
+    plan: free
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1 --threads 2 --worker-class gthread --max-requests 100 --max-requests-jitter 10
+    envVars:
+      - key: TOKENIZERS_PARALLELISM
+        value: "false"
+      - key: PYTHON_VERSION
+        value: "3.13"
+      - key: TRANSFORMERS_CACHE
+        value: /opt/render/project/.cache
+
+
+FILE: .slugignore (NEW FILE)
+=============================
+
+Content:
+--------
+*.pyc
+__pycache__/
+.git/
+.gitignore
+README.md
+.vscode/
+instance/
+*.db
+
+
+FILE: runtime.txt (DELETED)
+============================
+This file was created and then removed as it was ineffective on Render.
+
+
+SUMMARY OF CHANGES
+==================
+Total files modified: 3 (app.py, requirements.txt, render.yaml)
+Total files created: 1 (.slugignore)
+Total files deleted: 1 (runtime.txt)
+Total lines changed in app.py: ~40 lines
+
