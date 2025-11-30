@@ -153,12 +153,12 @@ def index():
                 db.session.add(candidate)
             else:
                 candidate.name = candidate_name
-            # Create unique job based on description hash to avoid reusing same job for all candidates
-            job_hash = hashlib.md5(job_text.encode()).hexdigest()[:8]
-            job_title = f"Job Role - {job_hash}"me_binary # Update PDF if new one uploaded
+                candidate.resume_text = resume_text
+                candidate.skills = ",".join(cand_skills)
+                if resume_binary:
+                    candidate.resume_data = resume_binary # Update PDF if new one uploaded
             
             # Create unique job based on description hash to avoid reusing same job for all candidates
-            import hashlib
             job_hash = hashlib.md5(job_text.encode()).hexdigest()[:8]
             job_title = f"Job Role - {job_hash}"
             
