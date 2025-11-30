@@ -214,18 +214,19 @@
                     <table class="table table-hover mb-0 align-middle">
                         <thead>
                             <tr>
-                                <th class="ps-4" style="width: 20%;">Candidate</th>
-                                <th style="width: 17%;">Email</th>
+                                <th class="ps-4" style="width: 18%;">Candidate</th>
+                                <th style="width: 15%;">Email</th>
                                 <th style="width: 15%;">Role</th>
-                                <th style="width: 15%;">Match Score</th>
-                                <th style="width: 20%;">Missing Skills</th>
-                                <th style="width: 13%;">Resume</th>
+                                <th style="width: 13%;">Match Score</th>
+                                <th style="width: 18%;">Missing Skills</th>
+                                <th style="width: 11%;">Resume</th>
+                                <th style="width: 10%;">Action</th>
                             </tr>
                         </thead>
                         <tbody>
                         {% if matches %}
                             {% for m in matches %}
-                                <tr>
+                                <tr id="candidate-row-{{ m.candidate.id }}">
                                     <td class="ps-4">
                                         <div class="fw-bold fs-5">{{ m.candidate.name if m.candidate else "N/A" }}</div>
                                     </td>
@@ -264,11 +265,17 @@
                                             <span class="text-secondary small">N/A</span>
                                         {% endif %}
                                     </td>
+                                    <td>
+                                        <button onclick="deleteCandidate({{ m.candidate.id }}, '{{ m.candidate.name }}')" class="btn btn-sm btn-outline-danger text-white">
+                                            🗑️ Delete
+                                        </button>
+                                    </td>
+                                    </td>
                                 </tr>
                             {% endfor %}
                         {% else %}
                             <tr>
-                                <td colspan="6"><div class="text-center p-5 text-light-muted">No candidates yet.</div></td>
+                                <td colspan="7"><div class="text-center p-5 text-light-muted">No candidates yet.</div></td>
                             </tr>
                         {% endif %}
                         </tbody>
@@ -285,5 +292,36 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function deleteCandidate(candidateId, candidateName) {
+    if (confirm(`Are you sure you want to delete ${candidateName}?\n\nThis will also remove all their match records.`)) {
+        fetch(`/delete-candidate/${candidateId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Remove the row from table
+                const row = document.getElementById(`candidate-row-${candidateId}`);
+                if (row) {
+                    row.remove();
+                }
+                alert(data.message);
+                // Reload page to update the list
+                window.location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to delete candidate. Please try again.');
+        });
+    }
+}
+</script>
 </body>
 </html>

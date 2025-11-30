@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, send_file, jsonify
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import os
@@ -78,12 +78,17 @@ def compute_skill_gap(candidate_skills, job_skills):
 
 def extract_text_from_pdf(pdf_file):
     if not PdfReader:
+        print("PdfReader not available")
         return ""
     try:
         reader = PdfReader(pdf_file)
         text = ""
         for page in reader.pages:
-            text += page.extract_text() or ""
+            page_text = page.extract_text() or ""
+            text += page_text
+        print(f"PDF extraction: {len(reader.pages)} pages, {len(text)} chars")
+        if not text.strip():
+            print("WARNING: PDF appears to be empty or image-based")
         return text
     except Exception as e:
         print(f"Error reading PDF: {e}")
@@ -108,6 +113,29 @@ def view_resume(candidate_id):
 def health_check():
     return {"status": "ok", "service": "blockcert-ai"}, 200
 
+@app.route('/delete-candidate/<int:candidate_id>', methods=['POST'])
+def delete_candidate(candidate_id):
+    try:
+        candidate = Candidate.query.get(candidate_id)
+        if not candidate:
+            return jsonify({"success": False, "message": "Candidate not found"}), 404
+        
+        candidate_name = candidate.name
+        
+        # Delete all matches associated with this candidate
+        Match.query.filter_by(candidate_id=candidate_id).delete()
+        
+        # Delete the candidate
+        db.session.delete(candidate)
+        db.session.commit()
+        
+        print(f"Deleted candidate: {candidate_name} (ID: {candidate_id})")
+        return jsonify({"success": True, "message": f"Successfully deleted {candidate_name}"}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting candidate: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     error_message = None
@@ -123,18 +151,37 @@ def index():
         if "resume_pdf" in request.files:
             file = request.files["resume_pdf"]
             if file.filename != "":
-                # 1. Read the binary data to save in DB
-                resume_binary = file.read()
-                # 2. Reset cursor to start so PDF reader can read it
-                file.seek(0)
-                # 3. Extract text
-                resume_text = extract_text_from_pdf(file)
+                print(f"Processing PDF file: {file.filename}")
+                # Read file into memory
+                file_content = file.read()
+                resume_binary = file_content
+                
+                # Extract text from the binary content
+                import io as io_module
+                pdf_stream = io_module.BytesIO(file_content)
+                resume_text = extract_text_from_pdf(pdf_stream)
+                print(f"Extracted text length: {len(resume_text)}")
         
         if not resume_text:
              resume_text = request.form.get("resume_text", "")
+             print(f"Using form text, length: {len(resume_text)}")
 
+        # If PDF extraction failed but we have a PDF file, provide a helpful message
+        if not resume_text and resume_binary:
+            error_message = "⚠️ Your PDF appears to be image-based or encrypted. Please paste your resume text in the text box below, or use a different PDF format."
+            print("PDF extraction failed - suggesting manual text input")
+        
+        print(f"Resume text length: {len(resume_text)}, Job text length: {len(job_text)}")
+        
+        if not resume_text or not job_text:
+            if not error_message:
+                error_message = "Please provide both a resume (text or PDF) and a job description."
+            print(f"Validation failed - Resume: {len(resume_text)}, Job: {len(job_text)}")
+        else:(f"Resume text length: {len(resume_text)}, Job text length: {len(job_text)}")
+        
         if not resume_text or not job_text:
             error_message = "Please provide both a resume (PDF) and a job description."
+            print(f"Validation failed - Resume: {len(resume_text)}, Job: {len(job_text)}")
         else:
             cand_skills = extract_skills(resume_text)
             job_skills = extract_skills(job_text)
@@ -198,6 +245,11 @@ def index():
 
     result = session.pop('analysis_result', None)
     matches = Match.query.order_by(Match.match_score.desc()).limit(10).all()
+    
+    # Debug: Print matches to console
+    print(f"Total matches found: {len(matches)}")
+    for m in matches:
+        print(f"Match ID: {m.id}, Candidate: {m.candidate.name if m.candidate else 'None'}, Score: {m.match_score}")
 
     return render_template("index.html", result=result, matches=matches, error_message=error_message)
 
