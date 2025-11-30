@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: blockcert-ai
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --timeout 200
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: TOKENIZERS_PARALLELISM
+        value: false
+    plan: free
